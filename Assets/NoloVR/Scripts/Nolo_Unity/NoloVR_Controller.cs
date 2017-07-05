@@ -7,6 +7,8 @@
 
 using UnityEngine;
 
+using System.Threading;
+
 public class NoloVR_Controller {
     //button mask
     public class ButtonMask
@@ -28,28 +30,36 @@ public class NoloVR_Controller {
         public NoloDevice(int num)
         {
             index = num;
+            mBufferedNoloState = new BufferedNoloState(index);
         }
+
         public int index { get; private set; }
         public Nolo_Transform GetPose()
         {
-            Update();
-            return pose;
+            return mBufferedNoloState.Get().pose;
         }
 
         public bool GetNoloButtonPressed(uint buttonMask)
         {
-            Update();
-            return (controllerStates.buttons & buttonMask) != 0;
+            return (mBufferedNoloState.Get().controllerStates.buttons & buttonMask) != 0;
         }
+
+        NoloState mState = new NoloState();
+
         public bool GetNoloButtonDown(uint buttonMask)
         {
-            Update();
-            return (controllerStates.buttons & buttonMask) != 0 && (preControllerStates.buttons & buttonMask) == 0;
+            mBufferedNoloState.GetCopyTo(mState);
+
+            return (mState.controllerStates.buttons & buttonMask) != 0 && 
+                   (mState.preControllerStates.buttons & buttonMask) == 0;
         }
+
         public bool GetNoloButtonUp(uint buttonMask)
         {
-            Update();
-            return (controllerStates.buttons & buttonMask) == 0 && (preControllerStates.buttons & buttonMask) != 0;
+            mBufferedNoloState.GetCopyTo(mState);
+
+            return (mState.controllerStates.buttons & buttonMask) == 0 &&
+                   (mState.preControllerStates.buttons & buttonMask) != 0;
         }
 
         public bool GetNoloButtonPressed(NoloButtonID button)
@@ -67,18 +77,23 @@ public class NoloVR_Controller {
 
         public bool GetNoloTouchPressed(uint touchMask)
         {
-            Update();
-            return (controllerStates.touches & touchMask) !=0;
+            return (mBufferedNoloState.Get().controllerStates.touches & touchMask) !=0;
         }
+
         public bool GetNoloTouchDown(uint touchMask)
         {
-            Update();
-            return (controllerStates.touches & touchMask) != 0 && (preControllerStates.touches & touchMask) == 0;
+            mBufferedNoloState.GetCopyTo(mState);
+
+            return (mState.controllerStates.touches & touchMask) != 0 && 
+                   (mState.preControllerStates.touches & touchMask) == 0;
         }
+
         public bool GetNoloTouchUp(uint touchMask)
         {
-            Update();
-            return (controllerStates.touches & touchMask) == 0 && (preControllerStates.touches & touchMask) != 0;
+            mBufferedNoloState.GetCopyTo(mState);
+
+            return (mState.controllerStates.touches & touchMask) == 0 && 
+                   (mState.preControllerStates.touches & touchMask) != 0;
         }
 
         public bool GetNoloTouchPressed(NoloTouchID touch)
@@ -95,72 +110,173 @@ public class NoloVR_Controller {
         }
 
         //touch axis return vector2 x(-1~1)y(-1,1)
+        Vector2 mGetAxisVector2 = new Vector2();
+        Vector2 mVector2Zero = Vector2.zero;
+
         public Vector2 GetAxis(NoloTouchID axisIndex = NoloTouchID.TouchPad)
         {
-            Update();
-            if ((controllerStates.touches &(1 << (int)axisIndex)) != 0)
+            mBufferedNoloState.GetCopyTo(mState);
+
+            if ((mState.controllerStates.touches & (1 << (int)axisIndex)) != 0)
             {
-                return new Vector2(controllerStates.touchpadAxis.x, controllerStates.touchpadAxis.y);
+                mGetAxisVector2.x = mState.controllerStates.touchpadAxis.x;
+                mGetAxisVector2.y = mState.controllerStates.touchpadAxis.y;
             }
-            return Vector2.zero;
-        }
-        public NoloTrackingStatus GetTrackingStaus()
-        {
-            Update();
-            if (trackingStatus == 0)
+            else
             {
-                return NoloTrackingStatus.OutofRange;
+                mGetAxisVector2 = mVector2Zero;
             }
-            if (trackingStatus == 1)
-            {
-                return NoloTrackingStatus.Normal;
-            }
-            return NoloTrackingStatus.NotConnect;
+
+            return mGetAxisVector2;
         }
 
-        private int trackingStatus;
-        private NoloVR_Plugins.Nolo_ControllerStates controllerStates, preControllerStates;
-        private Nolo_Transform pose;
-        private int preFrame = -1;
-        public void Update()
+        public NoloTrackingStatus GetTrackingStaus()
         {
-            if (Time.frameCount != preFrame)
+            mBufferedNoloState.GetCopyTo(mState);
+
+            return (mState.trackingStatus == 0 ? NoloTrackingStatus.OutofRange :
+                    mState.trackingStatus == 1 ? NoloTrackingStatus.Normal :
+                    NoloTrackingStatus.NotConnect);
+        }
+
+        class NoloState
+        {
+            public volatile int trackingStatus;
+            public NoloVR_Plugins.Nolo_ControllerStates controllerStates = new NoloVR_Plugins.Nolo_ControllerStates(); // struct
+            public NoloVR_Plugins.Nolo_ControllerStates preControllerStates = new NoloVR_Plugins.Nolo_ControllerStates(); // struct
+            public Nolo_Transform pose = new Nolo_Transform(); // struct
+
+            public void CopyTo(NoloState other)
             {
-                preFrame = Time.frameCount;
-                preControllerStates = controllerStates;
-                if (NoloVR_Playform.InitPlayform().GetPlayformError() == NoloError.None)
-                {
-                    pose = NoloVR_Plugins.GetPose(index);
-                    controllerStates = NoloVR_Plugins.GetControllerStates(index);
-                    trackingStatus = NoloVR_Plugins.GetTrackingStatus(index);
-                }
+                other.controllerStates = controllerStates;
+                other.preControllerStates = preControllerStates;
+                other.pose = pose;
+                other.trackingStatus = trackingStatus;
             }
+        }
+
+        class BufferedNoloState
+        {
+            public BufferedNoloState(int index)
+            {
+                mIndex = index;
+            }
+
+            int mIndex;
+
+            NoloState mNoloState = new NoloState();
+            NoloState mNoloStateCopy = new NoloState();
+
+            NoloState result = new NoloState();
+
+            public void SetFrom(NoloState state)
+            {
+                Monitor.Enter(mNoloState);
+                state.CopyTo(mNoloState);
+                Monitor.Exit(mNoloState);
+            }
+
+            public NoloState Get()
+            {
+                if (Monitor.TryEnter(mNoloState))
+                {
+                    mNoloState.CopyTo(result);
+                    mNoloState.CopyTo(mNoloStateCopy);
+                    Monitor.Exit(mNoloState);
+                }
+                else
+                {
+                    mNoloStateCopy.CopyTo(result);
+                }
+
+                return result;
+            }
+
+            public void GetCopyTo(NoloState target)
+            {
+                Get().CopyTo(target);
+            }
+        }
+
+        BufferedNoloState mBufferedNoloState;
+
+        NoloState mCallbackNoloState = new NoloState();
+
+        public void PeriodicUpdate()
+        {
+            mCallbackNoloState.preControllerStates = mCallbackNoloState.controllerStates;
+
+            if (App.noloPlayform.GetPlayformError() == NoloError.None)
+            {
+                mCallbackNoloState.pose = NoloVR_Plugins.GetPose(index);
+                mCallbackNoloState.controllerStates = NoloVR_Plugins.GetControllerStates(index);
+                mCallbackNoloState.trackingStatus = NoloVR_Plugins.GetTrackingStatus(index);
+            }
+
+            mBufferedNoloState.SetFrom(mCallbackNoloState);
         }
 
         //HapticPulse  parameter must be in 0~100
         public void TriggerHapticPulse(int intensity)
         {
-            if (NoloVR_Playform.InitPlayform().GetPlayformError() == NoloError.None)
+            if (App.noloPlayform.GetPlayformError() == NoloError.None)
             {
-                NoloVR_Playform.InitPlayform().TriggerHapticPulse(index, intensity);
+                App.noloPlayform.TriggerHapticPulse(index, intensity);
             }
         }
     }
     
     //device manager
     public static NoloDevice[] devices;
+
+    static readonly int kPollIntervalMilliseconds = 1000 / 50;
+
+    static System.Threading.Timer cNoloPollingTimer;
+
+    // Based on: https://stackoverflow.com/a/12797382/1252502
+
+    static System.Diagnostics.Stopwatch cStopwatch = new System.Diagnostics.Stopwatch();
+
+    static void NoloPeriodicUpdate(object pedro)
+    {
+        cStopwatch.Reset();
+        cStopwatch.Start();
+
+        // Long running operation:
+        if (devices != null)
+        {
+            int num_devices = devices.Length;
+
+            for (int i = 0; i < devices.Length; i++)
+            {
+                devices[i].PeriodicUpdate();
+            }
+        }
+
+        var next_time_to_wait = System.Math.Max( 0, kPollIntervalMilliseconds - cStopwatch.ElapsedMilliseconds );
+        cNoloPollingTimer.Change(next_time_to_wait, Timeout.Infinite );
+
+        //Debug.Log("ALIVE " + next_time_to_wait);
+    }
+
     public static NoloDevice GetDevice(NoloDeviceType deviceIndex)
     {
         if (devices == null)
         {
             devices = new NoloDevice[NoloVR_Plugins.trackedDeviceNumber];
+
             for (int i = 0; i < devices.Length; i++)
             {
                 devices[i] = new NoloDevice(i);
             }
+
+            // Start polling
+            cNoloPollingTimer = new Timer(NoloPeriodicUpdate, null, kPollIntervalMilliseconds, Timeout.Infinite);
         }
+
         return devices[(int)deviceIndex];
     }
+
     public static NoloDevice GetDevice(NoloVR_TrackedDevice trackedObject)
     {
         return GetDevice(trackedObject.deviceType);
