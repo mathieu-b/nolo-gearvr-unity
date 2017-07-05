@@ -1,15 +1,22 @@
 ﻿using UnityEngine;
 using System.Collections;
 using UnityEngine.UI;
-public class UI_Test : MonoBehaviour {
+public class UI_Test : MonoBehaviour 
+{
+
     private Text UIText;
+
+    [SerializeField]
+    bool isTextEnabled = false;
+
 	void Start () {
         UIText = GetComponent<Text>();
     }
-    Vector3 pre = Vector3.zero;
 
     void Update()
     {
+        if (isTextEnabled == false) return;
+
         UIText.text =
                   "HMD POS       :" + NoloVR_Controller.GetDevice(NoloDeviceType.Hmd).GetPose().pos + "\n"
             + "HMD ROT       :" + NoloVR_Controller.GetDevice(NoloDeviceType.Hmd).GetPose().rot + "\n"
