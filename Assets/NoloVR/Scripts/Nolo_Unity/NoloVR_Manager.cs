@@ -11,13 +11,11 @@ public class NoloVR_Manager : MonoBehaviour
     [Tooltip("the camera's rotation should be changed when the app running")]
     public GameObject VRCamera;
     [Tooltip("if you develop a gear app choose Gear,else choose Cardboard")]
-    public bool debug = true;
+    public bool debug = false;
     public NoloLogType logType;
     [HideInInspector]
     public NoloVR_TrackedDevice[] objects;
 
-
-    private int spacingFrame = 0;
     private static NoloVR_Manager instance;
     private NoloVR_Manager() { }
 
@@ -43,20 +41,17 @@ public class NoloVR_Manager : MonoBehaviour
         androidCallBack.AddComponent<NoloVR_AndroidCallBack>();
     }
 
-    void Update ()
+    void Start()
+    {
+        InvokeRepeating("HandleConnection", 0.0f, 2.0f);
+    }
+
+    void HandleConnection ()
     {
         //try to connect the usb device
-        if (NoloVR_Playform.InitPlayform().GetPlayformError() != NoloError.None)
+        if (App.noloPlayform.GetPlayformError() != NoloError.None)
         {
-            if (spacingFrame < 200)
-            {
-                spacingFrame ++;
-            }
-            else
-            {
-                NoloVR_Playform.InitPlayform().ConnectDevice();
-                spacingFrame = 0;
-            }
+            App.noloPlayform.ConnectDevice();
         }
     }
 
@@ -64,7 +59,7 @@ public class NoloVR_Manager : MonoBehaviour
     {
         //close connect from device
         Debug.Log("Nolo debug:Application quit");
-        NoloVR_Playform.InitPlayform().DisconnectDevice();
+        App.noloPlayform.DisconnectDevice();
     }
 
 }
