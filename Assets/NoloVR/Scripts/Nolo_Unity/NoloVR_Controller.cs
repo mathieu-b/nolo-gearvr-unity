@@ -229,7 +229,7 @@ public class NoloVR_Controller {
     //device manager
     public static NoloDevice[] devices;
 
-    static readonly int kPollIntervalMilliseconds = 1000 / 50;
+    static readonly int kPollIntervalMilliseconds = 1000 / 59;
 
     static System.Threading.Timer cNoloPollingTimer;
 
